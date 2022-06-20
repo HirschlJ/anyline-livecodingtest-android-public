@@ -4,34 +4,81 @@ import android.content.Context
 import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import androidx.activity.viewModels
+import androidx.core.view.isVisible
 import com.anyline.anylinelivecoding.databinding.ActivityScanBinding
 import io.anyline.AnylineSDK
+import io.anyline.camera.CameraController
+import io.anyline.camera.CameraOpenListener
+import io.anyline.plugin.barcode.BarcodeFormat
+import io.anyline.plugin.barcode.BarcodeScanViewPlugin
+import timber.log.Timber
+import java.lang.Exception
 
-class ScanActivity : AppCompatActivity() {
+class ScanActivity : AppCompatActivity(), CameraOpenListener {
+
     private lateinit var binding: ActivityScanBinding
+
+    private lateinit var barcodeScanViewPlugin: BarcodeScanViewPlugin
+
+    private val viewModel: ScanViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityScanBinding.inflate(layoutInflater)
-        val view = binding.root
-        setContentView(view)
-
-        /**
-         * TODO: Implement Barcode Scanning using the Anyline SDK.
-         * Expected Result: Scan a Barcode and return the scanned value to the User.
-         * Hints:
-         * - Use the documentation: https://documentation.anyline.com/toc/platforms/android/getting_started.html
-         * - Use the Anyline Examples App: https://github.com/Anyline/anyline-ocr-examples-android/blob/master/AnylineSDK-Examples/AnylineSDK-Examples-Source/app/src/main/java/io/anyline/examples/barcode/ScanBarcodeActivity.kt
-         * - Ignore anything License-related (this part is solved!)
-         * - Ignore requesting Permissions (already implemented in CameraPermissionActivity.kt)
-         * - For easier Logging, Timber can be used: Timber.d("This is Log Output")
-         * - To access views, ViewBinding can be used: binding.[Widget]
-         * - View Configuration is available in assets/barcode_view_config.json
-         * - Getting a result: Use (both works) ScanViewPlugin or ScanPlugin and attach (both works
-         *   again) a ScannedBarcodesListener or a ScanResultListener. Extract the required value
-         *   from the returned result and display it to the user.
-         */
+        setContentView(binding.root)
 
         AnylineSDK.init(getString(R.string.anyline_license_key), this)
+
+        //configuration variant 1 (as shown in general example)
+        /*val scanViewPluginConfig = ScanViewPluginConfig(applicationContext, "barcode_view_config.json")
+        barcodeScanViewPlugin = BarcodeScanViewPlugin(applicationContext, scanViewPluginConfig, "BARCODE")
+        val scanViewConfig = BaseScanViewConfig(applicationContext, "barcode_view_config.json")
+
+
+        binding.scanView.apply {
+            setScanViewConfig(scanViewConfig)
+            scanViewPlugin = barcodeScanViewPlugin
+            setCameraOpenListener(this@ScanActivity)
+        }*/
+
+        //Configuration variant 2 (shown in view configuration)
+        with(binding.scanView) {
+            init("barcode_view_config.json")
+            barcodeScanViewPlugin = BarcodeScanViewPlugin(applicationContext, scanViewPluginConfig, "BARCODE")
+            scanViewPlugin = barcodeScanViewPlugin
+            setCameraOpenListener(this@ScanActivity)
+        }
+
+        //Necessary??
+        barcodeScanViewPlugin.setBarcodeFormats(BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX)
+
+        barcodeScanViewPlugin.addScannedBarcodesListener(viewModel)
+
+        viewModel.scanResult.observe(this) { result ->
+            Timber.d("Received result $result")
+            binding.cvResult.isVisible = result.isNotEmpty()
+            binding.tvResult.text = getString(R.string.tv_scan_result, result)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        binding.scanView.start()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        binding.scanView.stop()
+        binding.scanView.releaseCameraInBackground()
+    }
+
+    override fun onCameraOpened(controller: CameraController?, width: Int, heigth: Int) {
+        Timber.d("Camera opened successfully. Frame resolution $width x $heigth")
+    }
+
+    override fun onCameraError(e: Exception?) {
+        throw RuntimeException(e)
     }
 
     companion object {
